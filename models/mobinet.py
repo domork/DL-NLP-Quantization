@@ -156,4 +156,8 @@ def _make_divisible(v, divisor, min_value=None):
     return new_v
 
 def proceed(device, epochs, train_loader, test_loader, lr, momentum):
+    # Process model with Post-Training Quantization (PTQ)
     model_utils.proceed_model(mobilenet_v2, 'mobilenet_v2', device, epochs, train_loader, test_loader, lr, momentum)
+
+    # Process model with Quantization-Aware Training (QAT)
+    model_utils.proceed_model_qat(mobilenet_v2, 'mobilenet_v2', device, epochs, train_loader, test_loader, lr, momentum)

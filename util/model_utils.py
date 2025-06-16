@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import torch.quantization
 
 import util.process_data as process
@@ -91,5 +92,104 @@ def proceed_model(model_creator, model_type, device, epochs, train_loader, test_
     # Test quantized model with Post-Training Quantization (PTQ)
     # _test_model will handle moving to CPU for quantization
     _test_model(model_creator, model_name, device, test_loader, train_loader, model_type, quantize=True, fbgemm=True)
+
+    _print_header_footer(False, model_type, method)
+
+
+def proceed_model_qat(model_creator, model_type, device, epochs, train_loader, test_loader, lr, momentum):
+    """
+    Process a model using Quantization-Aware Training (QAT).
+    This function creates a quantization-aware model, trains it, and then converts it to a fully quantized model.
+    """
+    method = "Quantization-Aware Training (QAT)"
+    _print_header_footer(True, model_type, method)
+    model_name = f"tiny_imagenet_{model_type}_qat.pt"
+
+    # Create a model with quantization enabled
+    model = model_creator(num_classes=200, quantize=True)
+
+    # Set model to evaluation mode for fusion
+    model.eval()
+
+    # Fuse modules (must be done on CPU)
+    if model_type == 'resnet18':
+        modules_to_fuse = [['conv1', 'bn1'],
+                           ['layer1.0.conv1', 'layer1.0.bn1'],
+                           ['layer1.0.conv2', 'layer1.0.bn2'],
+                           ['layer1.1.conv1', 'layer1.1.bn1'],
+                           ['layer1.1.conv2', 'layer1.1.bn2'],
+                           ['layer2.0.conv1', 'layer2.0.bn1'],
+                           ['layer2.0.conv2', 'layer2.0.bn2'],
+                           ['layer2.0.downsample.0', 'layer2.0.downsample.1'],
+                           ['layer2.1.conv1', 'layer2.1.bn1'],
+                           ['layer2.1.conv2', 'layer2.1.bn2'],
+                           ['layer3.0.conv1', 'layer3.0.bn1'],
+                           ['layer3.0.conv2', 'layer3.0.bn2'],
+                           ['layer3.0.downsample.0', 'layer3.0.downsample.1'],
+                           ['layer3.1.conv1', 'layer3.1.bn1'],
+                           ['layer3.1.conv2', 'layer3.1.bn2'],
+                           ['layer4.0.conv1', 'layer4.0.bn1'],
+                           ['layer4.0.conv2', 'layer4.0.bn2'],
+                           ['layer4.0.downsample.0', 'layer4.0.downsample.1'],
+                           ['layer4.1.conv1', 'layer4.1.bn1'],
+                           ['layer4.1.conv2', 'layer4.1.bn2']]
+    elif model_type == 'resnet50':
+        modules_to_fuse = [['conv1', 'bn1']]
+        for i in range(1, 5):
+            layer = getattr(model, f'layer{i}')
+            for j in range(len(layer)):
+                block = getattr(layer, str(j))
+                modules_to_fuse.append([f'layer{i}.{j}.conv1', f'layer{i}.{j}.bn1'])
+                modules_to_fuse.append([f'layer{i}.{j}.conv2', f'layer{i}.{j}.bn2'])
+                modules_to_fuse.append([f'layer{i}.{j}.conv3', f'layer{i}.{j}.bn3'])
+                if block.downsample:
+                    modules_to_fuse.append([f'layer{i}.{j}.downsample.0', f'layer{i}.{j}.downsample.1'])
+    elif model_type == 'mobilenet_v2':
+        modules_to_fuse = [['conv0', 'bn0']]
+        for i, block in enumerate(model.features_blocks):
+            if isinstance(block.conv_pw_sequential, nn.Sequential):
+                modules_to_fuse.append(
+                    [f'features_blocks.{i}.conv_pw_sequential.0', f'features_blocks.{i}.conv_pw_sequential.1'])
+            modules_to_fuse.append([f'features_blocks.{i}.conv_dw', f'features_blocks.{i}.bn_dw'])
+            modules_to_fuse.append([f'features_blocks.{i}.conv_pw_linear', f'features_blocks.{i}.bn_pw_linear'])
+        modules_to_fuse.append(['conv_final', 'bn_final'])
+    else:
+        raise ValueError("Unsupported model_type for quantization fusing.")
+
+    model = torch.quantization.fuse_modules(model, modules_to_fuse)
+
+    # Set QAT configuration
+    model.qconfig = torch.quantization.get_default_qat_qconfig('fbgemm')
+
+    # Set model to training mode for QAT (required by prepare_qat)
+    model.train()
+
+    # Prepare model for QAT
+    torch.quantization.prepare_qat(model, inplace=True)
+
+    # Move to training device
+    model.to(device)
+
+    # Create optimizer
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+
+    # Train with QAT
+    print(f"[*] Training {model_type} model with QAT...")
+    for epoch in range(1, epochs + 1):
+        process.train(model, device, train_loader, optimizer, epoch)
+    print(f"[+] QAT Training complete")
+
+    # Move back to CPU for quantization
+    model.to('cpu')
+
+    # Convert to quantized model
+    torch.quantization.convert(model, inplace=True)
+
+    # Save the QAT model
+    torch.save(model.state_dict(), model_name)
+
+    # Test the QAT model
+    process.test(model=model, device=torch.device('cpu'), test_loader=test_loader, 
+                 train_loader=train_loader, model_type=model_type)
 
     _print_header_footer(False, model_type, method)
