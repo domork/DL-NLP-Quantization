@@ -6,7 +6,7 @@ import util.prepare_data as util
 
 def main():
     print("[*] starting...")
-    epochs = 1
+    epochs = 20
     lr = 0.01
     momentum = 0.5
 
@@ -15,8 +15,8 @@ def main():
     train_loader, test_loader = util.get_tiny_imagenet_dataloaders()
 
     resnet18.proceed(device, epochs, train_loader, test_loader, lr, momentum)
-    # resnet50.proceed(device, epochs, train_loader, test_loader, lr, momentum)
-    # mobinet.proceed(device, epochs, train_loader, test_loader, lr, momentum)
+    resnet50.proceed(device, epochs, train_loader, test_loader, lr, momentum)
+    mobinet.proceed(device, epochs, train_loader, test_loader, lr, momentum)
 
     print("[+] finished all tasks, hell yeah :sunglasses:")
 
