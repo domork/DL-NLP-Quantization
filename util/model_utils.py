@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.quantization
 
 import util.process_data as process
-from util.model_fusing import get_modules_to_fuse
 
 
 def _print_header_footer(header, model_type, method):
@@ -25,21 +24,6 @@ def _print_header_footer(header, model_type, method):
         print(f"[+] {method.split(' ')[0]} Test complete")
         print(f"[+] finished model processing with {method.split(' ')[0]}")
         print("[*] ==========================================")
-
-
-def _train_model(model, device, train_loader, optimizer, epochs):
-    """
-    Train a model for the specified number of epochs.
-
-    Args:
-        model: The model to train
-        device: Device to run training on (CPU or GPU)
-        train_loader: DataLoader for training data
-        optimizer: Optimizer for training
-        epochs: Number of epochs to train for
-    """
-    for epoch in range(1, epochs + 1):
-        process.train(model, device, train_loader, optimizer, epoch)
 
 
 def _test_model(model_creator, model_name, device, test_loader, train_loader, model_type, quantize=False, fbgemm=False):
@@ -85,17 +69,6 @@ def proceed_model(model_creator, model_type, device, epochs, train_loader, test_
     """
     Process a model using Post-Training Quantization (PTQ).
     This function trains a model, tests it unquantized, and then applies PTQ.
-
-    Args:
-        model_creator: Function to create the model
-        model_type: Type of the model ('resnet18', 'resnet50', or 'mobilenet_v2')
-        device: Device to run the model on (CPU or GPU)
-        epochs: Number of training epochs
-        train_loader: DataLoader for training data
-        test_loader: DataLoader for test data
-        lr: Learning rate for optimizer
-        momentum: Momentum for optimizer
-        quantize_param: Whether to use quantization parameters
     """
     method = "Post-Training Quantization (PTQ)"
     _print_header_footer(True, model_type, method)
@@ -106,7 +79,8 @@ def proceed_model(model_creator, model_type, device, epochs, train_loader, test_
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
 
     print(f"[*] Training unquantized {model_type} model...")
-    _train_model(model, device, train_loader, optimizer, epochs)
+    for epoch in range(1, epochs + 1):
+        process.train(model, device, train_loader, optimizer, epoch)
     print(f"[+] Training complete")
 
     # Save the model
@@ -126,16 +100,6 @@ def proceed_model_qat(model_creator, model_type, device, epochs, train_loader, t
     """
     Process a model using Quantization-Aware Training (QAT).
     This function creates a quantization-aware model, trains it, and then converts it to a fully quantized model.
-
-    Args:
-        model_creator: Function to create the model
-        model_type: Type of the model ('resnet18', 'resnet50', or 'mobilenet_v2')
-        device: Device to run the model on (CPU or GPU)
-        epochs: Number of training epochs
-        train_loader: DataLoader for training data
-        test_loader: DataLoader for test data
-        lr: Learning rate for optimizer
-        momentum: Momentum for optimizer
     """
     method = "Quantization-Aware Training (QAT)"
     _print_header_footer(True, model_type, method)
@@ -147,16 +111,54 @@ def proceed_model_qat(model_creator, model_type, device, epochs, train_loader, t
     # Set model to evaluation mode for fusion
     model.eval()
 
-    # Get modules to fuse based on model type
-    modules_to_fuse = get_modules_to_fuse(model, model_type)
+    # Fuse modules (must be done on CPU)
+    if model_type == 'resnet18':
+        modules_to_fuse = [['conv1', 'bn1'],
+                           ['layer1.0.conv1', 'layer1.0.bn1'],
+                           ['layer1.0.conv2', 'layer1.0.bn2'],
+                           ['layer1.1.conv1', 'layer1.1.bn1'],
+                           ['layer1.1.conv2', 'layer1.1.bn2'],
+                           ['layer2.0.conv1', 'layer2.0.bn1'],
+                           ['layer2.0.conv2', 'layer2.0.bn2'],
+                           ['layer2.0.downsample.0', 'layer2.0.downsample.1'],
+                           ['layer2.1.conv1', 'layer2.1.bn1'],
+                           ['layer2.1.conv2', 'layer2.1.bn2'],
+                           ['layer3.0.conv1', 'layer3.0.bn1'],
+                           ['layer3.0.conv2', 'layer3.0.bn2'],
+                           ['layer3.0.downsample.0', 'layer3.0.downsample.1'],
+                           ['layer3.1.conv1', 'layer3.1.bn1'],
+                           ['layer3.1.conv2', 'layer3.1.bn2'],
+                           ['layer4.0.conv1', 'layer4.0.bn1'],
+                           ['layer4.0.conv2', 'layer4.0.bn2'],
+                           ['layer4.0.downsample.0', 'layer4.0.downsample.1'],
+                           ['layer4.1.conv1', 'layer4.1.bn1'],
+                           ['layer4.1.conv2', 'layer4.1.bn2']]
+    elif model_type == 'resnet50':
+        modules_to_fuse = [['conv1', 'bn1']]
+        for i in range(1, 5):
+            layer = getattr(model, f'layer{i}')
+            for j in range(len(layer)):
+                block = getattr(layer, str(j))
+                modules_to_fuse.append([f'layer{i}.{j}.conv1', f'layer{i}.{j}.bn1'])
+                modules_to_fuse.append([f'layer{i}.{j}.conv2', f'layer{i}.{j}.bn2'])
+                modules_to_fuse.append([f'layer{i}.{j}.conv3', f'layer{i}.{j}.bn3'])
+                if block.downsample:
+                    modules_to_fuse.append([f'layer{i}.{j}.downsample.0', f'layer{i}.{j}.downsample.1'])
+    elif model_type == 'mobilenet_v2':
+        modules_to_fuse = [['conv0', 'bn0']]
+        for i, block in enumerate(model.features_blocks):
+            if isinstance(block.conv_pw_sequential, nn.Sequential):
+                modules_to_fuse.append(
+                    [f'features_blocks.{i}.conv_pw_sequential.0', f'features_blocks.{i}.conv_pw_sequential.1'])
+            modules_to_fuse.append([f'features_blocks.{i}.conv_dw', f'features_blocks.{i}.bn_dw'])
+            modules_to_fuse.append([f'features_blocks.{i}.conv_pw_linear', f'features_blocks.{i}.bn_pw_linear'])
+        modules_to_fuse.append(['conv_final', 'bn_final'])
+    else:
+        raise ValueError("Unsupported model_type for quantization fusing.")
 
-    # Fuse modules for better quantization accuracy and performance
-    # This combines Conv2d+BatchNorm2d into a single module to eliminate unnecessary
-    # quantization/dequantization between them
     model = torch.quantization.fuse_modules(model, modules_to_fuse)
 
-    # 'fbgemm' backend is optimized for server deployments (x86 architecture)
-    # This configures how tensors will be observed and quantized during training
+    # Set QAT configuration
     model.qconfig = torch.quantization.get_default_qat_qconfig('fbgemm')
 
     # Set model to training mode for QAT (required by prepare_qat)
@@ -173,7 +175,8 @@ def proceed_model_qat(model_creator, model_type, device, epochs, train_loader, t
 
     # Train with QAT
     print(f"[*] Training {model_type} model with QAT...")
-    _train_model(model, device, train_loader, optimizer, epochs)
+    for epoch in range(1, epochs + 1):
+        process.train(model, device, train_loader, optimizer, epoch)
     print(f"[+] QAT Training complete")
 
     # Move back to CPU for quantization

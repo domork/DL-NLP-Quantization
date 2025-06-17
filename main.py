@@ -1,4 +1,6 @@
+import models.mobinet as mobinet
 import models.resnet18 as resnet18
+import models.resnet50 as resnet50
 import util.prepare_data as util
 
 
