@@ -25,7 +25,7 @@ def _print_header_footer(header, model_type, method):
         print("[*] ==========================================")
 
 
-def _test_model(model_creator, model_name, device, test_loader, train_loader, model_type, quantize=False, fbgemm=False):
+def _test_model(model_creator, model_name, device, test_loader, train_loader, model_type, quantize=False):
     """
     Test a model with the given parameters.
 
@@ -37,10 +37,9 @@ def _test_model(model_creator, model_name, device, test_loader, train_loader, mo
         train_loader: DataLoader for training data
         model_type: Type of the model
         quantize: Whether to quantize the model
-        fbgemm: Whether to use fbgemm backend for quantization
     """
     if quantize:
-        print(f"[*] Testing quantized {model_type} model with {'PTQ' if fbgemm else 'QAT'}:")
+        print(f"[*] Testing unquantized {model_type} model with PTQ:")
         model = model_creator(num_classes=200, quantize=True)
         # Quantization operations must be done on CPU
         cpu_device = torch.device("cpu")
@@ -53,12 +52,10 @@ def _test_model(model_creator, model_name, device, test_loader, train_loader, mo
     loaded_dict_enc = torch.load(model_name, map_location=test_device)
     model.load_state_dict(loaded_dict_enc)
 
-    if quantize and fbgemm:
-        process.test(model=model, device=test_device, test_loader=test_loader, train_loader=train_loader,
-                     quantize=True, fbgemm=True, model_type=model_type)
+    if quantize:
+        process.test(model=model, device=test_device, test_loader=test_loader, train_loader=train_loader, quantize=True)
     else:
-        process.test(model=model, device=test_device, test_loader=test_loader, train_loader=train_loader,
-                     model_type=model_type)
+        process.test(model=model, device=test_device, test_loader=test_loader, train_loader=train_loader)
 
     print(f"[+] Test complete")
 
@@ -90,6 +87,6 @@ def proceed_model(model_creator, model_type, device, epochs, train_loader, test_
 
     # Test quantized model with Post-Training Quantization (PTQ)
     # _test_model will handle moving to CPU for quantization
-    _test_model(model_creator, model_name, device, test_loader, train_loader, model_type, quantize=True, fbgemm=True)
+    _test_model(model_creator, model_name, device, test_loader, train_loader, model_type, quantize=True)
 
     _print_header_footer(False, model_type, method)

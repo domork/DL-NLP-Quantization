@@ -15,8 +15,8 @@ def main():
     train_loader, test_loader = util.get_tiny_imagenet_dataloaders()
 
     resnet18.proceed(device, epochs, train_loader, test_loader, lr, momentum)
-    resnet50.proceed(device, epochs, train_loader, test_loader, lr, momentum)
-    mobinet.proceed(device, epochs, train_loader, test_loader, lr, momentum)
+    # resnet50.proceed(device, epochs, train_loader, test_loader, lr, momentum)
+    # mobinet.proceed(device, epochs, train_loader, test_loader, lr, momentum)
 
     print("[+] finished all tasks, hell yeah :sunglasses:")
 
