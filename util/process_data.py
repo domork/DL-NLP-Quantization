@@ -20,10 +20,6 @@ def train(model, device, train_loader, optimizer, epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                        100. * batch_idx / len(train_loader), loss.item()))
-    #
-    # timestamp = str(time.time())
-    # torch.save(model.state_dict(), timestamp)
-    # print('Saved model at current timestamp: ' + timestamp)
 
 
 def print_size_of_model(model):
