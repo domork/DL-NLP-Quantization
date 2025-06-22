@@ -20,6 +20,10 @@ def train(model, device, train_loader, optimizer, epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                        100. * batch_idx / len(train_loader), loss.item()))
+    #
+    # timestamp = str(time.time())
+    # torch.save(model.state_dict(), timestamp)
+    # print('Saved model at current timestamp: ' + timestamp)
 
 
 def print_size_of_model(model):
@@ -28,7 +32,7 @@ def print_size_of_model(model):
     os.remove('temp.p')
 
 
-def test(model, device, test_loader, train_loader, quantize=False, model_type='resnet18'):
+def test(model, device, test_loader, train_loader, quantize=False, fbgemm=False, model_type='resnet18'):
     model.to(device)
     model.eval()
 
@@ -83,7 +87,10 @@ def test(model, device, test_loader, train_loader, quantize=False, model_type='r
             raise ValueError("Unsupported model_type for quantization fusing.")
 
         model = torch.quantization.fuse_modules(model, modules_to_fuse)
-        model.qconfig = torch.quantization.default_qconfig
+        if fbgemm:
+            model.qconfig = torch.quantization.get_default_qconfig('fbgemm')
+        else:
+            model.qconfig = torch.quantization.default_qconfig
         torch.quantization.prepare(model, inplace=True)
         model.eval()
         with torch.no_grad():
