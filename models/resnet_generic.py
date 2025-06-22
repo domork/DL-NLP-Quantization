@@ -126,7 +126,9 @@ class BasicBlock(nn.Module):
         self.bn2 = norm_layer(planes)
         self.downsample = downsample
         self.stride = stride
-        self.skip_add = nn.quantized.FloatFunctional()
+        # Add DeQuantStub and QuantStub for handling quantized tensors
+        self.dequant = torch.quantization.DeQuantStub()
+        self.quant = torch.quantization.QuantStub()
 
     def forward(self, x):
         identity = x
@@ -141,8 +143,12 @@ class BasicBlock(nn.Module):
         if self.downsample is not None:
             identity = self.downsample(x)
 
+        # For quantized models, dequantize before addition and quantize after
         if self.quantize:
-            out = self.skip_add.add(out, identity)
+            out = self.dequant(out)
+            identity = self.dequant(identity)
+            out += identity
+            out = self.quant(out)
         else:
             out += identity
 
@@ -169,7 +175,9 @@ class Bottleneck(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
-        self.skip_add = nn.quantized.FloatFunctional()
+        # Add DeQuantStub and QuantStub for handling quantized tensors
+        self.dequant = torch.quantization.DeQuantStub()
+        self.quant = torch.quantization.QuantStub()
 
     def forward(self, x):
         identity = x
@@ -188,8 +196,12 @@ class Bottleneck(nn.Module):
         if self.downsample is not None:
             identity = self.downsample(x)
 
+        # For quantized models, dequantize before addition and quantize after
         if self.quantize:
-            out = self.skip_add.add(out, identity)
+            out = self.dequant(out)
+            identity = self.dequant(identity)
+            out += identity
+            out = self.quant(out)
         else:
             out += identity
 

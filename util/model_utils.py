@@ -3,7 +3,6 @@ import torch.quantization
 
 import util.process_data as process
 
-
 def _print_header_footer(header, model_type, method):
     """
     Print header or footer for model processing.
@@ -60,15 +59,7 @@ def _test_model(model_creator, model_name, device, test_loader, train_loader, mo
     print(f"[+] Test complete")
 
 
-def proceed_model(model_creator, model_type, device, epochs, train_loader, test_loader, lr, momentum,
-                  quantize_param=False, skip_training=False):
-    """
-    Process a model using Post-Training Quantization (PTQ).
-    This function trains a model, tests it unquantized, and then applies PTQ.
-
-    Args:
-        skip_training: If True, skips the training phase and attempts to load a pre-trained model.
-    """
+def proceed_model(model_creator, model_type, device, epochs, train_loader, test_loader, lr, momentum, skip_training=False):
     method = "Post-Training Quantization (PTQ)"
     _print_header_footer(True, model_type, method)
     model_name = f"tiny_imagenet_{model_type}.pt"
@@ -140,16 +131,21 @@ def proceed_model_qat(model_creator, model_type, device, epochs, train_loader, t
     else:
         print(f"[*] Skipping QAT training for {model_type} model, attempting to load pre-trained QAT model...")
         try:
+            # Load the state dictionary
             loaded_dict_enc = torch.load(model_name, map_location=cpu_device)
+
+            # First convert the model to a quantized model
+            # This ensures the model structure matches the saved state dictionary
+            torch.quantization.convert(model, inplace=True)
+
+            # Now load the state dictionary
             model.load_state_dict(loaded_dict_enc)
             print(f"[+] Successfully loaded pre-trained QAT model from {model_name}")
-
-            # Convert the loaded model to a quantized model
-            torch.quantization.convert(model, inplace=True)
         except FileNotFoundError:
             print(f"[!] Warning: Pre-trained QAT model {model_name} not found. Model will not be trained or loaded.")
 
     # Test the quantized model
     process.test(model=model, device=cpu_device, test_loader=test_loader, train_loader=train_loader)
+    process.test(model=model, device=cpu_device, test_loader=test_loader, train_loader=train_loader, quantize=True)
 
     _print_header_footer(False, model_type, method)
