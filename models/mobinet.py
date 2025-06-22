@@ -124,6 +124,9 @@ class InvertedResidual(nn.Module):
         self.bn_pw_linear = norm_layer(oup)
 
         self.skip_add = nn.quantized.FloatFunctional()
+        # Add DeQuantStub and QuantStub for handling quantized tensors
+        self.dequant = torch.quantization.DeQuantStub()
+        self.quant = torch.quantization.QuantStub()
 
     def forward(self, x):
         identity = x
@@ -139,7 +142,11 @@ class InvertedResidual(nn.Module):
 
         if self.use_res_connect:
             if self.quantize:
-                out = self.skip_add.add(out, identity)
+                # For quantized models, dequantize before addition and quantize after
+                out = self.dequant(out)
+                identity = self.dequant(identity)
+                out += identity
+                out = self.quant(out)
             else:
                 out += identity
 
@@ -155,5 +162,11 @@ def _make_divisible(v, divisor, min_value=None):
         new_v += divisor
     return new_v
 
-def proceed(device, epochs, train_loader, test_loader, lr, momentum):
-    model_utils.proceed_model(mobilenet_v2, 'mobilenet_v2', device, epochs, train_loader, test_loader, lr, momentum)
+def proceed_ptq(device, epochs, train_loader, test_loader, lr, momentum, skip_training=False):
+    model_utils.proceed_model(mobilenet_v2, 'mobilenet_v2', device, epochs, train_loader, test_loader, lr, momentum, skip_training=skip_training)
+
+def proceed_qat(device, epochs, train_loader, test_loader, lr, momentum, skip_training=False):
+    model_utils.proceed_model_qat(mobilenet_v2, 'mobilenet_v2', device, epochs, train_loader, test_loader, lr, momentum, skip_training=skip_training)
+
+def proceed(device, epochs, train_loader, test_loader, lr, momentum, skip_training=False):
+    proceed_ptq(device, epochs, train_loader, test_loader, lr, momentum, skip_training=skip_training)
